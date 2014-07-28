@@ -22,8 +22,10 @@
 #include <I2cMaster.h>
 SoftI2cMaster rtc(SDA_PIN, SCL_PIN);
 
-//Array to hold the mac address
+//Array to hold the mac address, also the default one if no hardware address is available
 uint8_t mac[6] = {0x00,0x01,0x02,0x03,0x04,0x05};
+
+//Use Googles DNS server for address lookups
 const static uint8_t dns_ip[] = {8,8,8,8};
 
 
@@ -39,6 +41,8 @@ byte Ethernet::buffer[600];
 char HOST[50] = "iot.arthurguy.co.uk";
 char URL[50] = "/ping_back";
 uint8_t postRequest = true;  //0:GET,1:POST,2:POST-BODY
+
+//Make the post param configurable
 //char postParam[10] = "data";
 
 
@@ -78,8 +82,8 @@ void setup() {
   digitalWrite(systemBusy, true);
   digitalWrite(systemReady, false);
   
+  //The watchdog cannot be started here as the DHCP process can take longer than the 4 second timeout
   //watchdogOn();
-  //power_adc_disable();
   
   Serial.begin(9600);
   Serial.println(F("\nStarting..."));
@@ -94,6 +98,7 @@ void setup() {
       }
   }
   
+  //Print the mac address - not really needed but during this setup process we can output what we want
   Serial.print(mac[0], HEX);
   Serial.print(F(":"));
   Serial.print(mac[1], HEX);
@@ -105,8 +110,6 @@ void setup() {
   Serial.print(mac[4], HEX);
   Serial.print(F(":"));
   Serial.println(mac[5], HEX);
-  
-  
   
   
   //Read the host name, url and request type out of the eeprom
@@ -130,9 +133,13 @@ void setup() {
   if (!restartEthernet()) {
       Serial.println(F("Error Starting Ethernet Module"));
       //Wait and timeout
-      //while(1) {}
+      watchdogOn();
+      while(1) {}
   }
   
+  
+  //The setup process is complete so we can now activate the watchdog timer
+  watchdogOn();
   
   //Startup is complete, the module is now ready
   Serial.println(F("Ready..."));
@@ -209,7 +216,6 @@ void loop() {
         else if (postRequest == 1)
         {
             ether.urlEncode(stringToSend, stringToSendEncoded);
-            //Serial.println(stringToSendEncoded);
             Stash::prepare(PSTR("POST $S HTTP/1.1" "\r\n" 
                                 "Content-Type: application/x-www-form-urlencoded" "\r\n" 
                                 "Host: $S" "\r\n" 
@@ -222,7 +228,6 @@ void loop() {
         else if (postRequest == 2)
         {
             ether.urlEncode(stringToSend, stringToSendEncoded);
-            //Serial.println(stringToSendEncoded);
             Stash::prepare(PSTR("POST $S HTTP/1.1\r\n" 
                                 "Content-Type: application/json\r\n" 
                                 "Host: $S\r\n" 
@@ -271,22 +276,12 @@ void loop() {
               Serial.println(serverResponse);
             } else {
               handleFailedResponse();
-              /*
-              Serial.println("ERROR");
-              failureCount++;
-              if (failureCount == 3) {
-                restartEthernet();
-                failureCount = 0;
-              }
-              */
             }
         }
         
         //Check how long we have been waiting and timeout
         if (waitingForResponse && ((millis() - sendTime) > 4000))
         {
-            //Serial.println("ERROR");
-            //failureCount++;
             handleFailedResponse();
             waitingForResponse = false;
             digitalWrite(systemBusy, false);
@@ -297,15 +292,24 @@ void loop() {
 
 void handleFailedResponse()
 {
-    Serial.println("ERROR");
+    Serial.println(F("ERROR"));
     failureCount++;
     if (failureCount == 3) {
-        restartEthernet();
-        failureCount = 0;
+        if (restartEthernet()) {
+            failureCount = 0;
+        } else {
+            //The restart process has failed, try and force a reboot
+            watchdogOn();
+            while (1) {};
+        }
     }
 }
 
 boolean restartEthernet() {
+  
+    //Ensure the watchdog timer is off for this process, it can take several seconds, longer than the timeout
+    wdt_disable();
+  
     //Reset the ethernet module to ensure a clean start
     digitalWrite(ethernetReset, false);
     delay(50);
@@ -316,7 +320,7 @@ boolean restartEthernet() {
     if (ether.begin(sizeof Ethernet::buffer, mac, 10) == 0) {
         return false;
     }
-    Serial.println("Ethernet Started");
+    Serial.println(F("Ethernet Started"));
   
     if (!ether.dhcpSetup()) {
         delay(1000);
@@ -324,17 +328,18 @@ boolean restartEthernet() {
             return false;
         }
     }
-    Serial.println("DHCP Setup");
+    Serial.println(F("DHCP Setup"));
     
     ether.printIp("IP: ", ether.myip);
-    ether.printIp("Netmask: ", ether.netmask);
+    //ether.printIp("Netmask: ", ether.netmask);
     //ether.printIp("GW IP: ", ether.gwip);
-    ether.printIp("DNS IP: ", ether.dnsip);
+    //ether.printIp("DNS IP: ", ether.dnsip);
     
-    //Overide DNS With a decent one 
+    //Overide DNS With a decent one - this was required on the BB network and should be suitable for most other situations
     ether.copyIp(ether.dnsip, dns_ip);
     ether.printIp("DNS IP: ", ether.dnsip);
   
+    //From testing this is the riskiest part as it sometimes failes here, the double attempt is a very crude workaround some some of these situations
     if (!setHost()) {
         delay(1000);
         if (!setHost()) {
@@ -342,7 +347,7 @@ boolean restartEthernet() {
         }
     }
     
-    Serial.println("DNS Lookup Complete");
+    Serial.println(F("DNS Lookup Complete"));
     //ether.printIp("Server: ", ether.hisip);
     return true;
 }
@@ -388,7 +393,7 @@ boolean readMACAddress()
   if (!rtc.start(MAC_I2C_ADDRESS | I2C_WRITE)) {
     return false;
   }
-  //Write the register we want o read
+  //Write the register we want to read
   if (!rtc.write(0xFA)) {
     return false;
   }
@@ -412,20 +417,17 @@ uint8_t parseResponse(const char receivedResponse[], char httpResponse[]) {
 	uint8_t lastCharacterEOL = true;
 	uint8_t httpBody = false;
 	uint8_t statusLine = false;
-	//uint8_t receiving = true;
 	char statusCode[4];
 	uint8_t i = 0;
 	uint8_t n = 0;
         uint16_t x = 0;
-	//uint32_t lastCharacterTime = millis();
 	char c;
 
         //Serial.println("\n-- Parsing Response --");
         //Serial.print("Response Size ");
         //Serial.println(strlen(receivedResponse));
 
-	//while (receiving) {
-	  while(x < strlen(receivedResponse)) {
+	while(x < strlen(receivedResponse)) {
 
 		c = receivedResponse[x];
 		//Serial.print(c);
@@ -446,6 +448,7 @@ uint8_t parseResponse(const char receivedResponse[], char httpResponse[]) {
 		}
 		
 		//a 3 digit status code has been received, make sure its a 200
+                //  it should probably be looking for a 201 as well
 		if(i == 3) {
 			if (strcmp(statusCode, "200") != 0) {
 				Serial.println(statusCode);
@@ -461,7 +464,6 @@ uint8_t parseResponse(const char receivedResponse[], char httpResponse[]) {
 
 			//If we are in the body a new line indicates the end
 			if (httpBody) {
-				//receiving = false;
                             break;
 			}
 
@@ -482,26 +484,12 @@ uint8_t parseResponse(const char receivedResponse[], char httpResponse[]) {
 
 		//Start collecting the body message
 		if (!lastCharacterEOL && httpBody){
-			//_serial->print(c);
 			httpResponse[n] = c;
 			n++;
 		}
 
-		//When was the last character received. - timeout detection
-		//lastCharacterTime = millis();
-
               x++;
 	  }
-	  /*
-	  //Keep track of the time incase something gets stuck and we need to timeout
-	  if ((millis() - lastCharacterTime) > 250) {
-		//Stop receiving and return what we have got
-		receiving = false;
-		//_serial->println("Timeout");
-	  }
-	//}
-	*/
-	//Serial.println(httpResponse);
 	
 	return true;
 }
@@ -529,4 +517,3 @@ void watchdogOn() {
   MCUSR = MCUSR & B11110111;
 
 }
-
