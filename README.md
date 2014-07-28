@@ -52,3 +52,7 @@ The latest version of the board makes available the ATMEGA's reset pin, this can
 
 ###To Do
 The code could do with tidying up in places and there are a number of fixed options I would like to make configurable.
+
+
+##Licence
+The project code is released under the GNU General Public License
