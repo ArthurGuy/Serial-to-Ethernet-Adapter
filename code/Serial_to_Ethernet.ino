@@ -44,13 +44,8 @@ uint8_t postRequest = true;  //0:GET,1:POST,2:POST-BODY
 
 
 //Configure using this line
-//EthernetOut.println("+iot.arthurguy.co.uk:/ping_back:1:data");
-//+members.buildbrighton.com:/validate_key.asp:1
 //+iot.arthurguy.co.uk:/ping_back:1
 //+iot.arthurguy.co.uk:/art_light_data:0
-//+iot.arthurguy.co.uk:/sensor_network/save:1
-//+arthurguy.co.uk:/sensor_network/save:1
-//+data.arthurguy.co.uk:/stream/XRdO9uGzIG/data:2
 
 
 
