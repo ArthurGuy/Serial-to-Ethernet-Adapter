@@ -150,10 +150,10 @@ void setup() {
 
 
 
-char stringToSend[100];
-char stringToSendEncoded[100];
+char stringToSend[150];
+char stringToSendEncoded[200];
 char serverResponse[100];
-unsigned int i = 0;
+uint8_t i = 0;
 void loop() {
     ether.packetLoop(ether.packetReceive());
     wdt_reset();
@@ -423,8 +423,8 @@ uint8_t parseResponse(const char receivedResponse[], char httpResponse[]) {
         uint16_t x = 0;
 	char c;
 
-        //Serial.println("\n-- Parsing Response --");
-        //Serial.print("Response Size ");
+        //Serial.println(F("\n-- Parsing Response --"));
+        //Serial.print(F("Response Size "));
         //Serial.println(strlen(receivedResponse));
 
 	while(x < strlen(receivedResponse)) {
