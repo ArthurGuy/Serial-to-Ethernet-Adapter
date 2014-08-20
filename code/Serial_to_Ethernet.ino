@@ -216,7 +216,7 @@ void loop() {
         else if (postRequest == 1)
         {
             ether.urlEncode(stringToSend, stringToSendEncoded);
-            Stash::prepare(PSTR("POST $S HTTP/1.1" "\r\n" 
+            Stash::prepare(PSTR("POST $S HTTP/1.0" "\r\n" 
                                 "Content-Type: application/x-www-form-urlencoded" "\r\n" 
                                 "Host: $S" "\r\n" 
                                 "Connection: close" "\r\n" 
