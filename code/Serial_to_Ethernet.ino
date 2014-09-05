@@ -322,11 +322,10 @@ boolean restartEthernet() {
     }
     Serial.println(F("Ethernet Started"));
   
+    //Wait a bit before attempting the DHCP lookup - this is need by some networks
+    delay(2000);
     if (!ether.dhcpSetup()) {
-        delay(1000);
-        if (!ether.dhcpSetup()) {
-            return false;
-        }
+        return false;
     }
     Serial.println(F("DHCP Setup"));
     
